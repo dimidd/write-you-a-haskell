@@ -4,29 +4,73 @@ import Syntax
 import Parser
 import Eval
 import Pretty
+import Counter
 
 import Control.Monad
 import Control.Monad.Trans
 import System.Console.Haskeline
+import Control.Monad.State
 
 showStep :: (Int, Expr) -> IO ()
 showStep (d, x) = putStrLn ((replicate d ' ') ++ "=> " ++ ppexpr x)
 
-process :: String -> IO ()
-process line = do
-  let res = parseExpr line
-  case res of
-    Left err -> print err
-    Right ex -> do
-      let (out, ~steps) = runEval ex
-      mapM_ showStep steps
-      print out
+process :: Counter -> String -> IO ()
+process c line =
+    if ((length line) > 0)
+       then
+        if (head line) /= '%'
+            then do
+                let res = parseExpr line
+                case res of
+                    Left err -> print err
+                    Right ex -> do
+                        let (out, ~steps) = runEval ex
+                        mapM_ showStep steps
+                        out_ps1 c $ show out
+        else do
+                let out = handle_cmd line
+                out_ps1 c $ show out
+    -- TODO: don't increment counter for empty lines
+    else do
+      putStrLn ""
+
+
+out_ps1 :: Counter -> String -> IO ()
+out_ps1 c out = do
+      let out_count_io = c 0
+      out_count <- out_count_io
+      putStrLn $ "Out[" ++ (show out_count) ++ "]: " ++ out
+      putStrLn ""
+
+handle_cmd :: String -> String
+handle_cmd line = if line == "%hist"
+                     then
+                        "hist stub"
+                     else
+                        "unknown cmd"
 
 main :: IO ()
-main = runInputT defaultSettings loop
+main = do
+    c <- makeCounter
+    repl c
+
+repl :: Counter -> IO ()
+repl c = runInputT defaultSettings loop
   where
   loop = do
-    minput <- getInputLine "Untyped> "
+    minput <- getLineIO $ in_ps1 $ c
     case minput of
       Nothing -> outputStrLn "Goodbye."
-      Just input -> (liftIO $ process input) >> loop
+      Just input -> (liftIO $ process c input) >> loop
+
+getLineIO :: (MonadException m) => IO String -> InputT m (Maybe String)
+getLineIO ios = do
+    s <- liftIO ios
+    getInputLine s
+
+in_ps1 :: Counter -> IO String
+in_ps1 c = do
+    let ion = c 1
+    n <- ion
+    let s = "Untyped In[" ++ (show n) ++ "]> "
+    return s 
