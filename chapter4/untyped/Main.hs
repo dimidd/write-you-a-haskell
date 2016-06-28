@@ -14,6 +14,15 @@ import Control.Monad.State
 showStep :: (Int, Expr) -> IO ()
 showStep (d, x) = putStrLn ((replicate d ' ') ++ "=> " ++ ppexpr x)
 
+process' :: Counter -> String -> InputT (StateT [String] IO) ()
+process' c line = do
+    lift $ modify (++ [line])
+    if line == "%hist"
+     then
+        showHist c
+     else
+        liftIO $ process c line
+
 process :: Counter -> String -> IO ()
 process c line =
     if ((length line) > 0)
@@ -27,13 +36,20 @@ process c line =
                         let (out, ~steps) = runEval ex
                         mapM_ showStep steps
                         out_ps1 c $ show out
-        else do
-                let out = handle_cmd line
-                out_ps1 c $ show out
+        else
+            out_ps1 c "unknown cmd"
     -- TODO: don't increment counter for empty lines
     else do
       putStrLn ""
 
+showHist :: Counter -> InputT (StateT [String] IO) ()
+showHist c = do
+      let out_count_io = c 0
+      out_count <- liftIO $ out_count_io
+      hist <- lift get
+      let firstHist = head hist
+      liftIO $ putStrLn $ "Out[" ++ (show out_count) ++ "]: " ++ firstHist
+      liftIO $ putStrLn ""
 
 out_ps1 :: Counter -> String -> IO ()
 out_ps1 c out = do
@@ -42,12 +58,15 @@ out_ps1 c out = do
       putStrLn $ "Out[" ++ (show out_count) ++ "]: " ++ out
       putStrLn ""
 
+{-
 handle_cmd :: String -> String
-handle_cmd line = if line == "%hist"
+handle_cmd line = 
+                    if line == "%hist"
                      then
-                        "hist stub"
+                        showHist
                      else
                         "unknown cmd"
+-}
 
 main :: IO ()
 main = do
@@ -55,13 +74,14 @@ main = do
     repl c
 
 repl :: Counter -> IO ()
-repl c = runInputT defaultSettings loop
-  where
-  loop = do
+repl c = evalStateT (runInputT defaultSettings $ loop c) []
+
+loop :: Counter -> InputT (StateT [String] IO) ()
+loop c = do
     minput <- getLineIO $ in_ps1 $ c
     case minput of
       Nothing -> outputStrLn "Goodbye."
-      Just input -> (liftIO $ process c input) >> loop
+      Just input -> (process' c input) >> loop c
 
 getLineIO :: (MonadException m) => IO String -> InputT m (Maybe String)
 getLineIO ios = do
